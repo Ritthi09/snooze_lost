@@ -82,7 +82,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
                               value: '2 ครั้ง',
                               subtitle: 'เพิ่มขึ้นจากเมื่อวาน +1 ครั้ง',
                               subtitleColor: const Color(0xFF09F169),
-                              iconSize: 24
+                              iconSize: 24,
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -190,57 +190,66 @@ class _StatisticsPageState extends State<StatisticsPage> {
     required double iconSize,
   }) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: const Color(0xFF1C1C1E),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        
         children: [
           Row(
             children: [
               Container(
-                width: 32,
-                height: 32,
+                width: 28,
+                height: 28,
                 decoration: BoxDecoration(
                   color: iconColor.withOpacity(0.31),
                   shape: BoxShape.circle,
                 ),
                 child: Center(
                   child: iconifyIcon != null
-                      ? Iconify(iconifyIcon, color: iconColor, size: iconSize) // ดึงขนาดตามที่สั่งมา
-                      : Icon(icon, color: iconColor, size: iconSize),
+                      ? Iconify(iconifyIcon, color: iconColor, size: iconSize - 4)
+                      : Icon(icon, color: iconColor, size: iconSize - 4),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Expanded(
-                child: Text(
-                  title,
-                  style: GoogleFonts.kanit(
-                    color: Colors.white70,
-                    fontSize: 12,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    title,
+                    style: GoogleFonts.kanit(
+                      color: Colors.white70,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          Text(
-            value,
-            style: GoogleFonts.kanit(
-              color: valueColor,
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              value,
+              style: GoogleFonts.kanit(
+                color: valueColor,
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: GoogleFonts.kanit(
-              color: subtitleColor,
-              fontSize: 11,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              subtitle,
+              style: GoogleFonts.kanit(
+                color: subtitleColor,
+                fontSize: 11,
+              ),
             ),
           ),
         ],
@@ -248,9 +257,10 @@ class _StatisticsPageState extends State<StatisticsPage> {
     );
   }
 
+  // 🛠️ แก้ไขให้ "ระดับความง่วงเฉลี่ย" แสดงข้อความเต็ม ไม่โดนตัด...
   Widget _sensitivityCard() {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: const Color(0xFF1C1C1E),
         borderRadius: BorderRadius.circular(16),
@@ -261,8 +271,8 @@ class _StatisticsPageState extends State<StatisticsPage> {
           Row(
             children: [
               Container(
-                width: 32,
-                height: 32,
+                width: 28,
+                height: 28,
                 decoration: BoxDecoration(
                   color: const Color(0xFFE0833D).withOpacity(0.31),
                   shape: BoxShape.circle,
@@ -271,24 +281,33 @@ class _StatisticsPageState extends State<StatisticsPage> {
                   child: Iconify(
                     pulse, 
                     color: const Color(0xFFE0833D), 
-                    size: 24,
+                    size: 20,
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                'ระดับความง่วงเฉลี่ย',
-                style: GoogleFonts.kanit(color: Colors.white70, fontSize: 12),
+              const SizedBox(width: 6),
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'ระดับความง่วงเฉลี่ย',
+                    style: GoogleFonts.kanit(color: Colors.white70, fontSize: 12),
+                  ),
+                ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          Text(
-            'ปานกลาง',
-            style: GoogleFonts.kanit(
-              color: const Color(0xFFFF9500),
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              'ปานกลาง',
+              style: GoogleFonts.kanit(
+                color: const Color(0xFFFF9500),
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
           const SizedBox(height: 4),
@@ -309,12 +328,12 @@ class _StatisticsPageState extends State<StatisticsPage> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 2),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: ['ต่ำ', 'ปานกลาง', 'สูง'].map((l) => Text(
                 l,
-                style: GoogleFonts.kanit(color: Colors.white38, fontSize: 10),
+                style: GoogleFonts.kanit(color: Colors.white38, fontSize: 9),
               )).toList(),
             ),
           ),
@@ -323,133 +342,135 @@ class _StatisticsPageState extends State<StatisticsPage> {
     );
   }
 
-    Widget _buildChart() {
-  final data = _chartData[_selectedPeriod] ?? [];
-  final labels = _chartLabels[_selectedPeriod] ?? [];
-  const int yMax = 8;
-  const chartHeight = 140.0;
-  const labelHeight = 20.0;
+  Widget _buildChart() {
+    final data = _chartData[_selectedPeriod] ?? [];
+    final labels = _chartLabels[_selectedPeriod] ?? [];
+    const int yMax = 8;
+    const chartHeight = 140.0;
+    const labelHeight = 20.0;
 
-  // 8, 6, 4, 2, 0
-  final yLabels = [8, 6, 4, 2, 0];
+    final yLabels = [8, 6, 4, 2, 0];
 
-  return Container(
-    padding: const EdgeInsets.all(16),
-    decoration: BoxDecoration(
-      color: const Color(0xFF1C1C1E),
-      borderRadius: BorderRadius.circular(16),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          _chartTitle[_selectedPeriod] ?? '',
-          style: GoogleFonts.kanit(color: Colors.white, fontSize: 13),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Y-axis labels
-            SizedBox(
-              height: chartHeight,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: yLabels.map((v) => Text(
-                  '$v',
-                  style: GoogleFonts.kanit(color: Colors.white38, fontSize: 10),
-                )).toList(),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1C1C1E),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _chartTitle[_selectedPeriod] ?? '',
+            style: GoogleFonts.kanit(color: Colors.white, fontSize: 13),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Y-axis labels
+              SizedBox(
+                height: chartHeight,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: yLabels.map((v) => Text(
+                    '$v',
+                    style: GoogleFonts.kanit(color: Colors.white38, fontSize: 10),
+                  )).toList(),
+                ),
               ),
-            ),
-            const SizedBox(width: 4),
+              const SizedBox(width: 4),
 
-            // Chart area
-            Expanded(
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: chartHeight,
-                    child: Stack(
-                      children: [
-                        // เส้นประ grid
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: List.generate(yLabels.length, (_) =>
-                            Row(children: [
-                              Expanded(child: Container(height: 1, color: Colors.white12)),
-                            ]),
+              // Chart area
+              Expanded(
+                child: Column(
+                  children: [
+                    SizedBox(
+                      height: chartHeight,
+                      child: Stack(
+                        children: [
+                          // เส้นประ grid
+                          Column(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: List.generate(yLabels.length, (_) =>
+                              Row(children: [
+                                Expanded(child: Container(height: 1, color: Colors.white12)),
+                              ]),
+                            ),
                           ),
-                        ),
 
-                        // เส้น Y ซ้าย
-                        Positioned(
-                          left: 0, top: 0, bottom: 0,
-                          child: Container(width: 1, color: Colors.white24),
-                        ),
+                          // เส้น Y ซ้าย
+                          Positioned(
+                            left: 0, top: 0, bottom: 0,
+                            child: Container(width: 1, color: Colors.white24),
+                          ),
 
-                        // เส้น X ล่าง
-                        Positioned(
-                          left: 0, right: 0, bottom: 0,
-                          child: Container(height: 1, color: Colors.white24),
-                        ),
+                          // เส้น X ล่าง
+                          Positioned(
+                            left: 0, right: 0, bottom: 0,
+                            child: Container(height: 1, color: Colors.white24),
+                          ),
 
-                        // Bars
-                        Positioned.fill(
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: List.generate(data.length, (i) {
-                              final ratio = data[i] / yMax;
-                              return Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 3),
-                                  child: Align(
-                                    alignment: Alignment.bottomCenter,
-                                    child: AnimatedContainer(
-                                      duration: const Duration(milliseconds: 400),
-                                      height: (chartHeight - 1) * ratio,
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF09F169),
-                                        borderRadius: BorderRadius.circular(4),
+                          // Bars
+                          Positioned.fill(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: List.generate(data.length, (i) {
+                                final ratio = data[i] / yMax;
+                                return Expanded(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                                    child: Align(
+                                      alignment: Alignment.bottomCenter,
+                                      child: AnimatedContainer(
+                                        duration: const Duration(milliseconds: 400),
+                                        height: (chartHeight - 1) * ratio,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF09F169),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              );
-                            }),
+                                );
+                              }),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
 
-                  const SizedBox(height: 6),
-                  SizedBox(
-                    height: labelHeight,
-                    child: Row(
-                      children: List.generate(data.length, (i) =>
-                        Expanded(
-                          child: Text(
-                            i < labels.length ? labels[i] : '',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.kanit(color: Colors.white54, fontSize: 10),
+                    const SizedBox(height: 6),
+                    SizedBox(
+                      height: labelHeight,
+                      child: Row(
+                        children: List.generate(data.length, (i) =>
+                          Expanded(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                i < labels.length ? labels[i] : '',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.kanit(color: Colors.white54, fontSize: 10),
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
-        ),
-      ],
-    ),
-  );
-}
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildAdviceCard() {
     return Container(
-      padding: const EdgeInsets.only(left: 16, top: 16, bottom: 16, right: 32),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFF1C1C1E),
         borderRadius: BorderRadius.circular(16),
@@ -459,7 +480,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
           Iconify(
             moon, 
             color: const Color(0xFF09F169), 
-            size: 64, 
+            size: 44, 
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -479,16 +500,17 @@ class _StatisticsPageState extends State<StatisticsPage> {
                   'คุณควรพักผ่อนให้เพียงพอ\nเพื่อความปลอดภัยในการขับขี่',
                   style: GoogleFonts.kanit(
                     color: Colors.white70,
-                    fontSize: 13,
+                    fontSize: 12,
                   ),
                 ),
               ],
             ),
           ),
+          const SizedBox(width: 8),
           Iconify(
             sleeping, 
             color: const Color(0xFF09F169), 
-            size: 44, 
+            size: 36, 
           )
         ],
       ),
@@ -498,17 +520,17 @@ class _StatisticsPageState extends State<StatisticsPage> {
   Widget _buildBottomNavBar() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+      padding: const EdgeInsets.symmetric(vertical: 10),
       decoration: BoxDecoration(
         color: const Color(0xFF1C1C1E),
         borderRadius: BorderRadius.circular(15),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _navItem(icon: Icons.home, label: 'หน้าแรก', index: 0),
-          _navItem(icon: Icons.videocam, label: 'ตรวจจับ', index: 1),
-          _navItem(icon: Icons.bar_chart, label: 'สถิติ', index: 2),
+          Expanded(child: _navItem(icon: Icons.home, label: 'หน้าแรก', index: 0)),
+          Expanded(child: _navItem(icon: Icons.videocam, label: 'ตรวจจับ', index: 1)),
+          Expanded(child: _navItem(icon: Icons.bar_chart, label: 'สถิติ', index: 2)),
         ],
       ),
     );
@@ -522,63 +544,56 @@ class _StatisticsPageState extends State<StatisticsPage> {
     final isSelected = _currentIndex == index;
     final color = isSelected ? const Color(0xFF09F169) : Colors.white54;
 
-    if (index == 1) {
-      final isActive = _currentIndex == 1;
-      return GestureDetector(
-        onTap: () => Navigator.pop(context),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 4),
-            Container(
-              width: 22,
-              height: 22,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isActive ? const Color(0xFF09F169) : Colors.white30,
-                  width: 2,
-                ),
-              ),
-              child: Center(
-                child: Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: isActive ? const Color(0xFF09F169) : Colors.white30,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: GoogleFonts.kanit(
-                fontSize: 16,
-                color: isActive ? const Color(0xFF09F169) : Colors.white54,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () {
         if (index == 0) {
           Navigator.popUntil(context, (route) => route.isFirst);
+        } else if (index == 1) {
+          Navigator.pop(context);
         }
-        // index 2 อยู่หน้านี้แล้ว
       },
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(icon, color: color, size: 30),
+          SizedBox(
+            height: 28,
+            child: Center(
+              child: index == 1
+                  ? Container(
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: color,
+                          width: 2,
+                        ),
+                      ),
+                      child: Center(
+                        child: Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: color,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                    )
+                  : Icon(icon, color: color, size: 28),
+            ),
+          ),
           const SizedBox(height: 4),
           Text(
             label,
-            style: GoogleFonts.kanit(fontSize: 16, color: color),
+            textAlign: TextAlign.center,
+            style: GoogleFonts.kanit(
+              fontSize: 13,
+              color: color,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            ),
           ),
         ],
       ),
