@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:iconify_flutter/iconify_flutter.dart';
 import 'package:iconify_flutter/icons/mdi.dart';
+import 'stats_manager.dart';
 
 //เรียกไอคอน จาก iconify
 const String pulse = '<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 28 28"><path d="M0 0h28v28H0z" fill="none" /><path fill="currentColor" d="M10.035 3a1 1 0 0 1 .94.78l3.712 16.496l3.864-11.592a1 1 0 0 1 1.878-.055L22.177 13H25a1 1 0 1 1 0 2h-3.5a1 1 0 0 1-.928-.629l-.987-2.465l-4.136 12.41a1 1 0 0 1-1.925-.096L9.862 7.94l-1.904 6.347A1 1 0 0 1 7 15H3a1 1 0 1 1 0-2h3.256l2.786-9.287A1 1 0 0 1 10.035 3" /></svg>';
@@ -46,6 +47,8 @@ class _StatisticsPageState extends State<StatisticsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final stats = StatsManager();
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
@@ -79,7 +82,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
                               iconifyIcon: bell,
                               iconColor: const Color(0xFF09F169),
                               title: 'ตรวจพบอาการง่วง',
-                              value: '2 ครั้ง',
+                              value: '${stats.warningCount} ครั้ง', // 🔴 3. ดึงค่า warningCount
                               subtitle: 'เพิ่มขึ้นจากเมื่อวาน +1 ครั้ง',
                               subtitleColor: const Color(0xFF09F169),
                               iconSize: 24,
@@ -113,7 +116,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
                               iconifyIcon: caution,
                               iconColor: const Color(0xFFFF3B30),
                               title: 'อาการง่วงมาก',
-                              value: '2 ครั้ง',
+                              value: '${stats.dangerCount} ครั้ง', // 🔴 4. ดึงค่า dangerCount
                               valueColor: const Color(0xFFFF3B30),
                               subtitle: 'ควรพักผ่อนให้เพียงพอ',
                               subtitleColor: Colors.white54,
@@ -257,7 +260,6 @@ class _StatisticsPageState extends State<StatisticsPage> {
     );
   }
 
-  // 🛠️ แก้ไขให้ "ระดับความง่วงเฉลี่ย" แสดงข้อความเต็ม ไม่โดนตัด...
   Widget _sensitivityCard() {
     return Container(
       padding: const EdgeInsets.all(12),

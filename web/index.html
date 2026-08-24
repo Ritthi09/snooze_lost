@@ -42,5 +42,38 @@
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
   <script src="flutter_bootstrap.js" async></script>
+  <!-- โหลด TensorFlow.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+
+  <!-- สคริปต์โหลดและประมวลผลโมเดล -->
+  <script>
+    let model;
+
+    // 1. โหลดโมเดล
+    async function loadYoloModel() {
+      model = await tf.loadGraphModel('model/model.json');
+      console.log("TF.js Model Loaded!");
+    }
+
+    // 2. ฟังก์ชันรับวิดีโอมาทำ Prediction
+    async function detectVideo(videoElement) {
+      if (!model) return null;
+      
+      // แปลงภาพจากวิดีโอกล้องเป็น Tensor และ Resize ให้ตรงกับขนาดที่ YOLO ใช้ (เช่น 640x640)
+      const tensor = tf.browser.fromPixels(videoElement)
+        .resizeNearestNeighbor([640, 640])
+        .toFloat()
+        .div(tf.scalar(255.0))
+        .expandDims();
+
+      // ประมวลผลผ่านโมเดล
+      const predictions = await model.predict(tensor);
+      
+      // คืนค่าผลลัพธ์กลับไปให้ Dart/Flutter
+      return predictions.dataSync(); 
+    }
+
+    loadYoloModel();
+  </script>
 </body>
 </html>

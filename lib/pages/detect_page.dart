@@ -1,10 +1,20 @@
 import 'dart:async';
+import 'dart:js_interop';
 import 'dart:typed_data';
+import 'package:web/web.dart' as web;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:camera/camera.dart';
 import 'statistics_page.dart';
+import 'stats_manager.dart';
+
+// ==========================================
+// JS INTEROP BINDING
+// ==========================================
+
+@JS('detectVideo')
+external JSPromise _callDetectVideo(web.Element video);
 
 // ==========================================
 // ENUMS
@@ -13,7 +23,7 @@ import 'statistics_page.dart';
 enum DrowsinessLevel { normal, warning, danger }
 
 // ==========================================
-// PREPROCESS (Keep logic mock for Web)
+// PREPROCESS
 // ==========================================
 
 Float32List _preprocessYUV(
@@ -27,18 +37,6 @@ Float32List _preprocessYUV(
 ) {
   const int targetSize = 640;
   return Float32List(targetSize * targetSize * 3);
-}
-
-Float32List _preprocessIsolate(List<dynamic> args) {
-  return _preprocessYUV(
-    args[0] as Uint8List,
-    args[1] as Uint8List,
-    args[2] as Uint8List,
-    args[3] as int,
-    args[4] as int,
-    args[5] as int,
-    args[6] as int,
-  );
 }
 
 // ==========================================
@@ -58,19 +56,13 @@ class _DetectPageState extends State<DetectPage>
   DrowsinessLevel _level = DrowsinessLevel.normal;
   CameraController? _cameraController;
 
-  // ── AI Model (Mock for Web) ──
+  // ── AI Model Web Integration ──
   bool _isProcessing = false;
   bool _modelReady = false;
+  Timer? _inferenceTimer;
 
-  // ── Temporal Smoothing ──
-  final List<bool> _eyeClosedHistory = [];
-  static const int _historySize = 9;
-  static const int _closedThreshold = 7;
-
-  // ── Timer ──
+  // ── Timer & Status ──
   DateTime? _eyeClosedStart;
-  static const double _warningDuration = 1.0;
-  static const double _dangerDuration = 3.0;
   bool _alertShowing = false;
 
   // ── REC animation ──
@@ -91,22 +83,49 @@ class _DetectPageState extends State<DetectPage>
   }
 
   // ==========================================
-  // LOAD MODEL (Mocked for Web)
+  // LOAD MODEL & RUN INFERENCE ON WEB
   // ==========================================
 
   Future<void> _initModel() async {
     try {
-      // จําลองการโหลด model สั้นๆ 500ms
       await Future.delayed(const Duration(milliseconds: 500));
       if (mounted) {
         setState(() {
           _modelReady = true;
         });
       }
-      debugPrint('Web Demo: Model loaded successfully ✅ (Mock)');
     } catch (e) {
       debugPrint('Model load error: $e');
     }
+  }
+
+  Future<void> _runInferenceOnWeb() async {
+    if (_isProcessing || !_modelReady) return;
+    _isProcessing = true;
+
+    try {
+      final videoElement = web.document.querySelector('video');
+
+      if (videoElement != null) {
+        // รอรับค่า Promise จาก JS
+        final resultJS = await _callDetectVideo(videoElement).toDart;
+        // แปลง JSString เป็น String ของ Dart (ใช้ (resultJS as JSString).toDart)
+        if (resultJS != null) {
+          final String resultStr = (resultJS as JSString).toDart;
+          _processYoloResult(resultStr);
+        }
+      }
+    } catch (e) {
+      debugPrint("Error running inference: $e");
+    } finally {
+      _isProcessing = false;
+    }
+  }
+
+  void _processYoloResult(dynamic result) {
+    // TODO: ใส่ Logic แปลงผลลัพธ์จาก YOLO ใน index.html เพื่อเปลี่ยนค่า _level
+    // ตัวอย่าง:
+    // if (result == 'danger') _setLevel(DrowsinessLevel.danger);
   }
 
   // ==========================================
@@ -130,27 +149,38 @@ class _DetectPageState extends State<DetectPage>
       );
 
       await _cameraController!.initialize();
-      if (mounted) setState(() {});
+      if (mounted) {
+        setState(() {});
+        // เริ่มวนลูปส่งภาพไปประมวลผลผ่าน JS
+        _inferenceTimer = Timer.periodic(
+          const Duration(milliseconds: 200),
+          (_) => _runInferenceOnWeb(),
+        );
+      }
     } catch (e) {
-      debugPrint('Camera error (Web/Desktop fallback): $e');
+      debugPrint('Camera error: $e');
     }
   }
 
   void _setLevel(DrowsinessLevel level) {
-    if (!mounted) return;
-    if (_level == level) return;
-    setState(() => _level = level);
-    if (level == DrowsinessLevel.danger && !_alertShowing) {
+  if (!mounted || _level == level) return;
+  setState(() => _level = level);
+
+  // บันทึกสถิติทันทีที่มีการเตือน
+  if (level == DrowsinessLevel.warning) {
+    StatsManager().addLog('warning');
+  } else if (level == DrowsinessLevel.danger) {
+    StatsManager().addLog('danger');
+    if (!_alertShowing) {
       _alertShowing = true;
       _showDangerAlert();
     }
   }
-
-  // Public สำหรับ debug panel / ทดสอบสถานะตอน Demo
-  void updateDrowsinessLevel(DrowsinessLevel level) => _setLevel(level);
+}
 
   @override
   void dispose() {
+    _inferenceTimer?.cancel();
     _cameraController?.dispose();
     _pulseController.dispose();
     super.dispose();
@@ -274,32 +304,31 @@ class _DetectPageState extends State<DetectPage>
                   fit: StackFit.expand,
                   children: [
                     if (_cameraController != null &&
-                          _cameraController!.value.isInitialized)
-                        LayoutBuilder(
-                          builder: (context, constraints) {
-                            // ดึงสัดส่วนจริงจากตัวกล้อง
-                            double cameraAspectRatio = _cameraController!.value.aspectRatio;
+                        _cameraController!.value.isInitialized)
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          double cameraAspectRatio =
+                              _cameraController!.value.aspectRatio;
 
-                            // บน Web มือถือแนวตั้ง สัดส่วนกล้องจะถูกส่งมาเป็นแนวนอน
-                            // จึงต้องสลับค่าสัดส่วนเพื่อให้ตรงกับแนวตั้งของมือถือ
-                            if (cameraAspectRatio > 1) {
-                              cameraAspectRatio = 1 / cameraAspectRatio;
-                            }
-                            return ClipRect(
-                              child: OverflowBox(
-                                alignment: Alignment.center,
-                                child: FittedBox(
-                                  fit: BoxFit.cover,
-                                  child: SizedBox(
-                                    width: constraints.maxWidth,
-                                    height: constraints.maxWidth / cameraAspectRatio,
-                                    child: CameraPreview(_cameraController!),
-                                  ),
+                          if (cameraAspectRatio > 1) {
+                            cameraAspectRatio = 1 / cameraAspectRatio;
+                          }
+                          return ClipRect(
+                            child: OverflowBox(
+                              alignment: Alignment.center,
+                              child: FittedBox(
+                                fit: BoxFit.cover,
+                                child: SizedBox(
+                                  width: constraints.maxWidth,
+                                  height: constraints.maxWidth /
+                                      cameraAspectRatio,
+                                  child: CameraPreview(_cameraController!),
                                 ),
                               ),
-                            );
-                          },
-                        )
+                            ),
+                          );
+                        },
+                      )
                     else
                       Container(
                         color: Colors.grey[900],
@@ -373,7 +402,7 @@ class _DetectPageState extends State<DetectPage>
                       ),
                     ),
 
-                    // Demo Helper Toggle (ให้กดเปลี่ยนสถานะโชว์อาจารย์ได้)
+                    // Demo Helper Toggle
                     Positioned(
                       bottom: 16,
                       right: 16,
@@ -406,7 +435,6 @@ class _DetectPageState extends State<DetectPage>
             // Status Card
             GestureDetector(
               onTap: () {
-                // กดที่การ์ดเพื่อสลับสถานะจำลองส่งอาจารย์ได้ง่ายๆ
                 if (_level == DrowsinessLevel.normal) {
                   _setLevel(DrowsinessLevel.warning);
                 } else if (_level == DrowsinessLevel.warning) {
