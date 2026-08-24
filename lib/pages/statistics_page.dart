@@ -4,7 +4,6 @@ import 'package:iconify_flutter/iconify_flutter.dart';
 import 'package:iconify_flutter/icons/mdi.dart';
 import 'stats_manager.dart';
 
-//เรียกไอคอน จาก iconify
 const String pulse = '<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 28 28"><path d="M0 0h28v28H0z" fill="none" /><path fill="currentColor" d="M10.035 3a1 1 0 0 1 .94.78l3.712 16.496l3.864-11.592a1 1 0 0 1 1.878-.055L22.177 13H25a1 1 0 1 1 0 2h-3.5a1 1 0 0 1-.928-.629l-.987-2.465l-4.136 12.41a1 1 0 0 1-1.925-.096L9.862 7.94l-1.904 6.347A1 1 0 0 1 7 15H3a1 1 0 1 1 0-2h3.256l2.786-9.287A1 1 0 0 1 10.035 3" /></svg>';
 const String bell = '<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24"><path d="M0 0h24v24H0z" fill="none" /><path fill="currentColor" d="M17.133 12.632v-1.8a5.406 5.406 0 0 0-4.154-5.262A1 1 0 0 0 13 5.464V3.1a1 1 0 0 0-2 0v2.364a1 1 0 0 0 .021.106a5.406 5.406 0 0 0-4.154 5.262v1.8C6.867 15.018 5 15.614 5 16.807C5 17.4 5 18 5.538 18h12.924C19 18 19 17.4 19 16.807c0-1.193-1.867-1.789-1.867-4.175M6 6a1 1 0 0 1-.707-.293l-1-1a1 1 0 0 1 1.414-1.414l1 1A1 1 0 0 1 6 6m-2 4H3a1 1 0 0 1 0-2h1a1 1 0 1 1 0 2m14-4a1 1 0 0 1-.707-1.707l1-1a1 1 0 1 1 1.414 1.414l-1 1A1 1 0 0 1 18 6m3 4h-1a1 1 0 1 1 0-2h1a1 1 0 1 1 0 2M8.823 19a3.453 3.453 0 0 0 6.354 0z" /></svg>';
 const String caution = '<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 48 50"><path d="M0 0h48v48H0z" fill="none" /><defs><mask id="SVG5u6ebeaz"><g fill="none" stroke-width="4"><path fill="#fff" fill-rule="evenodd" stroke="#fff" stroke-linejoin="round" d="M24 5L2 43h44z" clip-rule="evenodd" /><path stroke="#000" stroke-linecap="round" d="M24 35v1m0-17l.008 10" /></g></mask></defs><path fill="currentColor" d="M0 0h48v48H0z" mask="url(#SVG5u6ebeaz)" /></svg>';
@@ -24,18 +23,11 @@ class _StatisticsPageState extends State<StatisticsPage> {
 
   final List<String> _periods = ['วันนี้', '7 วัน', '30 วัน', 'ทั้งหมด'];
 
-  final Map<int, List<double>> _chartData = {
-    0: [1, 0, 2, 0, 8, 3, 0, 1, 2],
-    1: [2, 1, 0, 3, 6, 4, 2],
-    2: [1, 3, 2, 6],
-    3: [1, 2, 4, 3, 5, 3],
-  };
-
   final Map<int, List<String>> _chartLabels = {
-    0: ['00', '03', '06', '09', '12', '15', '18', '21', '24'],
+    0: ['00', '03', '06', '09', '12', '15', '18', '21'],
     1: ['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.'],
     2: ['สัปดาห์ 1', 'สัปดาห์ 2', 'สัปดาห์ 3', 'สัปดาห์ 4'],
-    3: ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.'],
+    3: ['ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.', 'ม.ค.', 'ก.พ.'],
   };
 
   final Map<int, String> _chartTitle = {
@@ -45,9 +37,43 @@ class _StatisticsPageState extends State<StatisticsPage> {
     3: 'แนวโน้มการตรวจพบอาการง่วง (ภาพรวม)',
   };
 
+  // แปลง Duration ให้เป็นข้อความแบบ "X ชม. Y นาที"
+  String _formatDuration(Duration duration) {
+    int hours = duration.inHours;
+    int minutes = duration.inMinutes.remainder(60);
+    if (hours > 0) {
+      return '$hours ชม. $minutes นาที';
+    }
+    return '$minutes นาที';
+  }
+
   @override
   Widget build(BuildContext context) {
     final stats = StatsManager();
+
+    // ดึงค่าตาม Period ที่กดเลือก
+    final warningCount = stats.getWarningCount(_selectedPeriod);
+    final dangerCount = stats.getDangerCount(_selectedPeriod);
+    final usageDuration = stats.getTotalUsageDuration(_selectedPeriod);
+    final startText = stats.getStartUsageText(_selectedPeriod);
+    final avgLevelLabel = stats.getAverageDrowsinessLabel(_selectedPeriod);
+    final avgLevelValue = stats.getAverageDrowsinessValue(_selectedPeriod);
+
+    // Subtitle การตรวจพบอาการง่วง
+    String warningSubtitle = '';
+    Color warningSubtitleColor = const Color(0xFF09F169);
+    if (_selectedPeriod == 0) {
+      int diff = stats.getWarningDiffFromYesterday();
+      warningSubtitle = diff >= 0 ? 'เพิ่มขึ้นจากเมื่อวาน +$diff ครั้ง' : 'ลดลงจากเมื่อวาน $diff ครั้ง';
+    } else {
+      warningSubtitle = 'รวมการตรวจพบทั้งหมด';
+      warningSubtitleColor = Colors.white54;
+    }
+
+    // สีของระดับความง่วง
+    Color avgColor = const Color(0xFF09F169); // ต่ำ = เขียว
+    if (avgLevelValue == 1.0) avgColor = const Color(0xFFFF9500); // ปานกลาง = ส้ม
+    if (avgLevelValue == 2.0) avgColor = const Color(0xFFFF3B30); // สูง = แดง
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -82,9 +108,9 @@ class _StatisticsPageState extends State<StatisticsPage> {
                               iconifyIcon: bell,
                               iconColor: const Color(0xFF09F169),
                               title: 'ตรวจพบอาการง่วง',
-                              value: '${stats.warningCount} ครั้ง', // 🔴 3. ดึงค่า warningCount
-                              subtitle: 'เพิ่มขึ้นจากเมื่อวาน +1 ครั้ง',
-                              subtitleColor: const Color(0xFF09F169),
+                              value: '$warningCount ครั้ง',
+                              subtitle: warningSubtitle,
+                              subtitleColor: warningSubtitleColor,
                               iconSize: 24,
                             ),
                           ),
@@ -94,8 +120,8 @@ class _StatisticsPageState extends State<StatisticsPage> {
                               iconifyIcon: Mdi.clock_outline,
                               iconColor: const Color(0xFFFFD600),
                               title: 'ระยะเวลาการใช้งาน',
-                              value: '1 ชม. 9 นาที',
-                              subtitle: 'เริ่มใช้งาน 19.30 น.',
+                              value: _formatDuration(usageDuration),
+                              subtitle: startText,
                               subtitleColor: Colors.white54,
                               iconSize: 24,
                             ),
@@ -109,14 +135,20 @@ class _StatisticsPageState extends State<StatisticsPage> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Expanded(child: _sensitivityCard()),
+                          Expanded(
+                            child: _sensitivityCard(
+                              levelLabel: avgLevelLabel,
+                              levelValue: avgLevelValue,
+                              levelColor: avgColor,
+                            ),
+                          ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: _statCard(
                               iconifyIcon: caution,
                               iconColor: const Color(0xFFFF3B30),
                               title: 'อาการง่วงมาก',
-                              value: '${stats.dangerCount} ครั้ง', // 🔴 4. ดึงค่า dangerCount
+                              value: '$dangerCount ครั้ง',
                               valueColor: const Color(0xFFFF3B30),
                               subtitle: 'ควรพักผ่อนให้เพียงพอ',
                               subtitleColor: Colors.white54,
@@ -127,7 +159,7 @@ class _StatisticsPageState extends State<StatisticsPage> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    _buildChart(),
+                    _buildChart(stats.getChartData(_selectedPeriod)),
                     const SizedBox(height: 16),
                     _buildAdviceCard(),
                     const SizedBox(height: 8),
@@ -260,7 +292,11 @@ class _StatisticsPageState extends State<StatisticsPage> {
     );
   }
 
-  Widget _sensitivityCard() {
+  Widget _sensitivityCard({
+    required String levelLabel,
+    required double levelValue,
+    required Color levelColor,
+  }) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -276,13 +312,13 @@ class _StatisticsPageState extends State<StatisticsPage> {
                 width: 28,
                 height: 28,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE0833D).withOpacity(0.31),
+                  color: levelColor.withOpacity(0.31),
                   shape: BoxShape.circle,
                 ),
-                child: Center( 
+                child: Center(
                   child: Iconify(
-                    pulse, 
-                    color: const Color(0xFFE0833D), 
+                    pulse,
+                    color: levelColor,
                     size: 20,
                   ),
                 ),
@@ -304,9 +340,9 @@ class _StatisticsPageState extends State<StatisticsPage> {
           FittedBox(
             fit: BoxFit.scaleDown,
             child: Text(
-              'ปานกลาง',
+              levelLabel,
               style: GoogleFonts.kanit(
-                color: const Color(0xFFFF9500),
+                color: levelColor,
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
               ),
@@ -315,15 +351,15 @@ class _StatisticsPageState extends State<StatisticsPage> {
           const SizedBox(height: 4),
           SliderTheme(
             data: SliderTheme.of(context).copyWith(
-              activeTrackColor: const Color(0xFFFF9500),
+              activeTrackColor: levelColor,
               inactiveTrackColor: Colors.white24,
-              thumbColor: const Color(0xFFFF9500),
+              thumbColor: levelColor,
               overlayShape: SliderComponentShape.noOverlay,
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
               trackHeight: 2,
             ),
             child: Slider(
-              value: 1,
+              value: levelValue,
               min: 0,
               max: 2,
               onChanged: null,
@@ -344,14 +380,14 @@ class _StatisticsPageState extends State<StatisticsPage> {
     );
   }
 
-  Widget _buildChart() {
-    final data = _chartData[_selectedPeriod] ?? [];
+  Widget _buildChart(List<double> data) {
     final labels = _chartLabels[_selectedPeriod] ?? [];
-    const int yMax = 8;
+    double maxVal = data.isEmpty ? 8 : data.reduce((a, b) => a > b ? a : b);
+    final double yMax = maxVal < 8 ? 8 : maxVal; // สเกลขั้นต่ำ 8
     const chartHeight = 140.0;
     const labelHeight = 20.0;
 
-    final yLabels = [8, 6, 4, 2, 0];
+    final yLabels = [yMax.toInt(), (yMax * 0.75).toInt(), (yMax * 0.5).toInt(), (yMax * 0.25).toInt(), 0];
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -370,7 +406,6 @@ class _StatisticsPageState extends State<StatisticsPage> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Y-axis labels
               SizedBox(
                 height: chartHeight,
                 child: Column(
@@ -382,8 +417,6 @@ class _StatisticsPageState extends State<StatisticsPage> {
                 ),
               ),
               const SizedBox(width: 4),
-
-              // Chart area
               Expanded(
                 child: Column(
                   children: [
@@ -391,7 +424,6 @@ class _StatisticsPageState extends State<StatisticsPage> {
                       height: chartHeight,
                       child: Stack(
                         children: [
-                          // เส้นประ grid
                           Column(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: List.generate(yLabels.length, (_) =>
@@ -400,25 +432,19 @@ class _StatisticsPageState extends State<StatisticsPage> {
                               ]),
                             ),
                           ),
-
-                          // เส้น Y ซ้าย
                           Positioned(
                             left: 0, top: 0, bottom: 0,
                             child: Container(width: 1, color: Colors.white24),
                           ),
-
-                          // เส้น X ล่าง
                           Positioned(
                             left: 0, right: 0, bottom: 0,
                             child: Container(height: 1, color: Colors.white24),
                           ),
-
-                          // Bars
                           Positioned.fill(
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: List.generate(data.length, (i) {
-                                final ratio = data[i] / yMax;
+                                final ratio = yMax == 0 ? 0.0 : data[i] / yMax;
                                 return Expanded(
                                   child: Padding(
                                     padding: const EdgeInsets.symmetric(horizontal: 3),
@@ -441,7 +467,6 @@ class _StatisticsPageState extends State<StatisticsPage> {
                         ],
                       ),
                     ),
-
                     const SizedBox(height: 6),
                     SizedBox(
                       height: labelHeight,

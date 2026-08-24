@@ -132,35 +132,40 @@ class _DetectPageState extends State<DetectPage>
   // CAMERA INIT
   // ==========================================
 
-  Future<void> _initCamera() async {
-    try {
-      final cameras = await availableCameras();
-      if (cameras.isEmpty) return;
+  // 1. ปรับปรุง _initCamera ให้สั่งเริ่มนับเวลา Session
+Future<void> _initCamera() async {
+  try {
+    final cameras = await availableCameras();
+    if (cameras.isEmpty) return;
 
-      final front = cameras.firstWhere(
-        (c) => c.lensDirection == CameraLensDirection.front,
-        orElse: () => cameras.first,
+    final front = cameras.firstWhere(
+      (c) => c.lensDirection == CameraLensDirection.front,
+      orElse: () => cameras.first,
+    );
+
+    _cameraController = CameraController(
+      front,
+      ResolutionPreset.medium,
+      enableAudio: false,
+    );
+
+    await _cameraController!.initialize();
+    if (mounted) {
+      setState(() {});
+      
+      // 🟢 เพิ่มบรรทัดนี้: เริ่มนับเวลาขับขี่/เปิดกล้องตรวจจับ
+      StatsManager().startSession();
+
+      // เริ่มวนลูปส่งภาพไปประมวลผลผ่าน JS
+      _inferenceTimer = Timer.periodic(
+        const Duration(milliseconds: 200),
+        (_) => _runInferenceOnWeb(),
       );
-
-      _cameraController = CameraController(
-        front,
-        ResolutionPreset.medium,
-        enableAudio: false,
-      );
-
-      await _cameraController!.initialize();
-      if (mounted) {
-        setState(() {});
-        // เริ่มวนลูปส่งภาพไปประมวลผลผ่าน JS
-        _inferenceTimer = Timer.periodic(
-          const Duration(milliseconds: 200),
-          (_) => _runInferenceOnWeb(),
-        );
-      }
-    } catch (e) {
-      debugPrint('Camera error: $e');
     }
+  } catch (e) {
+    debugPrint('Camera error: $e');
   }
+}
 
   void _setLevel(DrowsinessLevel level) {
   if (!mounted || _level == level) return;
@@ -179,12 +184,14 @@ class _DetectPageState extends State<DetectPage>
 }
 
   @override
-  void dispose() {
-    _inferenceTimer?.cancel();
-    _cameraController?.dispose();
-    _pulseController.dispose();
-    super.dispose();
-  }
+void dispose() {
+  // 🟢 เพิ่มบรรทัดนี้: หยุดนับเวลาขับขี่และบันทึกลง Stats
+  StatsManager().stopSession();
+  _inferenceTimer?.cancel();
+  _cameraController?.dispose();
+  _pulseController.dispose();
+  super.dispose();
+}
 
   // ==========================================
   // UI HELPERS
