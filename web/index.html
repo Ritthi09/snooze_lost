@@ -1,19 +1,6 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
@@ -33,47 +20,74 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
-
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
   <script src="flutter_bootstrap.js" async></script>
-  <!-- โหลด TensorFlow.js -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
 
-  <!-- สคริปต์โหลดและประมวลผลโมเดล -->
+  <!-- โหลด ไลบรารีสำหรับประมวลผล TFLite บน Web -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-cpu"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite/dist/tf-tflite.min.js"></script>
+
+  <!-- สคริปต์โหลดและประมวลผลโมเดล TFLite -->
   <script>
-    let model;
+    let tfliteModel = null;
 
-    // 1. โหลดโมเดล
-    async function loadYoloModel() {
-      model = await tf.loadGraphModel('model/model.json');
-      console.log("TF.js Model Loaded!");
+    // ตั้งค่า WASM Path สำหรับ TFLite
+    tflite.setWasmPath('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite/dist/');
+
+    // 1. โหลดโมเดลจาก assets
+    async function loadTfliteModel() {
+      try {
+        // Path อ้างอิงสำหรับ assets ใน Flutter Web
+        tfliteModel = await tflite.loadTFLiteModel('assets/best_float16.tflite');
+        console.log("✅ TFLite Model Loaded Successfully!");
+      } catch (error) {
+        console.error("❌ Failed to load TFLite Model:", error);
+      }
     }
 
-    // 2. ฟังก์ชันรับวิดีโอมาทำ Prediction
     async function detectVideo(videoElement) {
-      if (!model) return null;
-      
-      // แปลงภาพจากวิดีโอกล้องเป็น Tensor และ Resize ให้ตรงกับขนาดที่ YOLO ใช้ (เช่น 640x640)
-      const tensor = tf.browser.fromPixels(videoElement)
-        .resizeNearestNeighbor([640, 640])
-        .toFloat()
-        .div(tf.scalar(255.0))
-        .expandDims();
+      if (!tfliteModel) {
+        console.warn("Model not ready yet.");
+        return null;
+      }
 
-      // ประมวลผลผ่านโมเดล
-      const predictions = await model.predict(tensor);
-      
-      // คืนค่าผลลัพธ์กลับไปให้ Dart/Flutter
-      return predictions.dataSync(); 
+      if (!videoElement) {
+        videoElement = document.querySelector('video');
+      }
+
+      if (!videoElement) return null;
+
+      try {
+        return tf.tidy(() => {
+          // 1. แปลงภาพจากกล้องเป็น Tensor
+          const imgTensor = tf.browser.fromPixels(videoElement);
+
+          // 2. ปรับขนาดภาพเป็น 640x640
+          const resized = tf.image.resizeBilinear(imgTensor, [640, 640]);
+
+          // 3. ปรับสเกลภาพเป็น 0.0 - 1.0
+          const normalized = tf.div(resized, 255.0);
+
+          // 4. ขยาย Dimension (Batch size = 1) โดยใช้ tf.expandDims ครอบ
+          const batched = tf.expandDims(normalized, 0);
+
+          // 5. รัน Predict ผ่าน TFLite Model
+          const predictions = tfliteModel.predict(batched);
+          const data = predictions.dataSync();
+
+          // 🟢 เพิ่มบรรทัดนี้เพื่อดูจำนวนตัวเลขทั้งหมดที่โมเดลพ่นออกมา
+          console.log("Output Length:", data.length); 
+
+          return JSON.stringify(Array.from(data));
+        });
+      } catch (err) {
+        console.error("Error during detection:", err);
+        return null;
+      }
     }
 
-    loadYoloModel();
+    // เริ่มโหลดโมเดลทันทีเมื่อเปิดเว็บ
+    loadTfliteModel();
   </script>
 </body>
 </html>

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:typed_data';
 import 'package:web/web.dart' as web;
@@ -9,39 +10,10 @@ import 'package:camera/camera.dart';
 import 'statistics_page.dart';
 import 'stats_manager.dart';
 
-// ==========================================
-// JS INTEROP BINDING
-// ==========================================
-
 @JS('detectVideo')
 external JSPromise _callDetectVideo(web.Element video);
 
-// ==========================================
-// ENUMS
-// ==========================================
-
 enum DrowsinessLevel { normal, warning, danger }
-
-// ==========================================
-// PREPROCESS
-// ==========================================
-
-Float32List _preprocessYUV(
-  Uint8List yPlane,
-  Uint8List uPlane,
-  Uint8List vPlane,
-  int srcW,
-  int srcH,
-  int uvRowStride,
-  int uvPixelStride,
-) {
-  const int targetSize = 640;
-  return Float32List(targetSize * targetSize * 3);
-}
-
-// ==========================================
-// DETECT PAGE
-// ==========================================
 
 class DetectPage extends StatefulWidget {
   const DetectPage({super.key});
@@ -56,16 +28,16 @@ class _DetectPageState extends State<DetectPage>
   DrowsinessLevel _level = DrowsinessLevel.normal;
   CameraController? _cameraController;
 
-  // ── AI Model Web Integration ──
   bool _isProcessing = false;
   bool _modelReady = false;
   Timer? _inferenceTimer;
 
-  // ── Timer & Status ──
   DateTime? _eyeClosedStart;
   bool _alertShowing = false;
 
-  // ── REC animation ──
+  // 🟢 Buffer สำหรับทำ Temporal Smoothing (กันเฟรมหลุด/กระพริบตา)
+  final List<bool> _historyFrames = [];
+
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
 
@@ -82,10 +54,6 @@ class _DetectPageState extends State<DetectPage>
     _initModel().then((_) => _initCamera());
   }
 
-  // ==========================================
-  // LOAD MODEL & RUN INFERENCE ON WEB
-  // ==========================================
-
   Future<void> _initModel() async {
     try {
       await Future.delayed(const Duration(milliseconds: 500));
@@ -100,18 +68,26 @@ class _DetectPageState extends State<DetectPage>
   }
 
   Future<void> _runInferenceOnWeb() async {
-    if (_isProcessing || !_modelReady) return;
+    if (_isProcessing ||
+        !_modelReady ||
+        _cameraController == null ||
+        !_cameraController!.value.isInitialized) {
+      return;
+    }
+
     _isProcessing = true;
 
     try {
       final videoElement = web.document.querySelector('video');
 
       if (videoElement != null) {
-        // รอรับค่า Promise จาก JS
-        final resultJS = await _callDetectVideo(videoElement).toDart;
-        // แปลง JSString เป็น String ของ Dart (ใช้ (resultJS as JSString).toDart)
+        final JSAny? resultJS = await _callDetectVideo(videoElement).toDart;
+
         if (resultJS != null) {
-          final String resultStr = (resultJS as JSString).toDart;
+          final String resultStr = resultJS.isA<JSString>()
+              ? (resultJS as JSString).toDart
+              : resultJS.toString();
+
           _processYoloResult(resultStr);
         }
       }
@@ -122,80 +98,143 @@ class _DetectPageState extends State<DetectPage>
     }
   }
 
-  void _processYoloResult(dynamic result) {
-    // TODO: ใส่ Logic แปลงผลลัพธ์จาก YOLO ใน index.html เพื่อเปลี่ยนค่า _level
-    // ตัวอย่าง:
-    // if (result == 'danger') _setLevel(DrowsinessLevel.danger);
-  }
+  // 🟢 ประกาศตัวแปรนับเฟรมสะสมไว้ที่ระดับ Class (ใส่นอกฟังก์ชัน หรือด้านบนสุดของ State)
+  int _consecutiveClosedFrames = 0;
 
-  // ==========================================
-  // CAMERA INIT
-  // ==========================================
+  void _processYoloResult(String rawJsonStr) {
+    try {
+      final List<dynamic> rawList = jsonDecode(rawJsonStr);
+      if (rawList.isEmpty) return;
 
-  // 1. ปรับปรุง _initCamera ให้สั่งเริ่มนับเวลา Session
-Future<void> _initCamera() async {
-  try {
-    final cameras = await availableCameras();
-    if (cameras.isEmpty) return;
+      double maxEyeOpenConf = 0.0;
+      double maxEyeClosedConf = 0.0;
+      const double confThreshold = 0.30;
 
-    final front = cameras.firstWhere(
-      (c) => c.lensDirection == CameraLensDirection.front,
-      orElse: () => cameras.first,
-    );
+      // 1. Parse Data จาก Output
+      if (rawList.first is List) {
+        for (var box in rawList) {
+          final List<dynamic> row = box as List<dynamic>;
+          if (row.length >= 6) {
+            double score = (row[4] as num).toDouble();
+            int classId = (row[5] as num).toInt();
 
-    _cameraController = CameraController(
-      front,
-      ResolutionPreset.medium,
-      enableAudio: false,
-    );
+            if (score > confThreshold) {
+              if (classId == 0 && score > maxEyeOpenConf) {
+                maxEyeOpenConf = score;
+              } else if (classId == 1 && score > maxEyeClosedConf) {
+                maxEyeClosedConf = score;
+              }
+            }
+          }
+        }
+      } else {
+        final List<double> output =
+            rawList.map((e) => (e as num).toDouble()).toList();
+        if (output.length < 1800) return;
 
-    await _cameraController!.initialize();
-    if (mounted) {
-      setState(() {});
-      
-      // 🟢 เพิ่มบรรทัดนี้: เริ่มนับเวลาขับขี่/เปิดกล้องตรวจจับ
-      StatsManager().startSession();
+        for (int i = 0; i < 300; i++) {
+          int baseIdx = i * 6;
+          if (baseIdx + 5 < output.length) {
+            double score = output[baseIdx + 4];
+            int classId = output[baseIdx + 5].round();
 
-      // เริ่มวนลูปส่งภาพไปประมวลผลผ่าน JS
-      _inferenceTimer = Timer.periodic(
-        const Duration(milliseconds: 200),
-        (_) => _runInferenceOnWeb(),
-      );
+            if (score > confThreshold) {
+              if (classId == 0 && score > maxEyeOpenConf) {
+                maxEyeOpenConf = score;
+              } else if (classId == 1 && score > maxEyeClosedConf) {
+                maxEyeClosedConf = score;
+              }
+            }
+          }
+        }
+      }
+
+      debugPrint(
+          "Open: ${maxEyeOpenConf.toStringAsFixed(2)} | Closed: ${maxEyeClosedConf.toStringAsFixed(2)}");
+
+      // 🟢 2. เช็กว่าเฟรมปัจจุบัน "หลับตา" หรือไม่
+      bool isClosedThisFrame = (maxEyeClosedConf > (maxEyeOpenConf + 0.10)) &&
+          (maxEyeClosedConf > confThreshold);
+
+      // 🟢 3. คำนวณตามจำนวนเฟรมที่หลับตาติดต่อกัน (Inference ทำงานทุก 150ms)
+      if (isClosedThisFrame) {
+        _consecutiveClosedFrames++;
+      } else {
+        // ถ้าลืมตาแม้แต่เฟรมเดียว หรือมั่นใจว่าตาเปิด ให้ตัดนับใหม่ทันที
+        _consecutiveClosedFrames = 0;
+      }
+
+      // 🟢 4. กำหนดสถานะตามจำนวนเฟรมหลับตา (150ms ต่อ 1 เฟรม)
+      // - หลับตาต่อเนื่อง 15 เฟรม (~2.25 วินาทีขึ้นไป) -> ง่วงมาก (Danger)
+      // - หลับตาต่อเนื่อง 5 เฟรม (~0.75 วินาทีขึ้นไป)  -> เริ่มง่วง (Warning)
+      // - น้อยกว่า 5 เฟรม                           -> ปกติ (Normal)
+      if (_consecutiveClosedFrames >= 8) {
+        _setLevel(DrowsinessLevel.danger);
+      } else if (_consecutiveClosedFrames >= 2) {
+        _setLevel(DrowsinessLevel.warning);
+      } else {
+        _setLevel(DrowsinessLevel.normal);
+      }
+
+    } catch (e) {
+      debugPrint("Error parsing YOLO result: $e");
     }
-  } catch (e) {
-    debugPrint('Camera error: $e');
   }
-}
+
+  Future<void> _initCamera() async {
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) return;
+
+      final front = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.front,
+        orElse: () => cameras.first,
+      );
+
+      _cameraController = CameraController(
+        front,
+        ResolutionPreset.medium,
+        enableAudio: false,
+      );
+
+      await _cameraController!.initialize();
+      if (mounted) {
+        setState(() {});
+        StatsManager().startSession();
+
+        _inferenceTimer = Timer.periodic(
+          const Duration(milliseconds: 150),
+          (_) => _runInferenceOnWeb(),
+        );
+      }
+    } catch (e) {
+      debugPrint('Camera error: $e');
+    }
+  }
 
   void _setLevel(DrowsinessLevel level) {
-  if (!mounted || _level == level) return;
-  setState(() => _level = level);
+    if (!mounted || _level == level) return;
+    setState(() => _level = level);
 
-  // บันทึกสถิติทันทีที่มีการเตือน
-  if (level == DrowsinessLevel.warning) {
-    StatsManager().addLog('warning');
-  } else if (level == DrowsinessLevel.danger) {
-    StatsManager().addLog('danger');
-    if (!_alertShowing) {
-      _alertShowing = true;
-      _showDangerAlert();
+    if (level == DrowsinessLevel.warning) {
+      StatsManager().addLog('warning');
+    } else if (level == DrowsinessLevel.danger) {
+      StatsManager().addLog('danger');
+      if (!_alertShowing) {
+        _alertShowing = true;
+        _showDangerAlert();
+      }
     }
   }
-}
 
   @override
-void dispose() {
-  // 🟢 เพิ่มบรรทัดนี้: หยุดนับเวลาขับขี่และบันทึกลง Stats
-  StatsManager().stopSession();
-  _inferenceTimer?.cancel();
-  _cameraController?.dispose();
-  _pulseController.dispose();
-  super.dispose();
-}
-
-  // ==========================================
-  // UI HELPERS
-  // ==========================================
+  void dispose() {
+    StatsManager().stopSession();
+    _inferenceTimer?.cancel();
+    _cameraController?.dispose();
+    _pulseController.dispose();
+    super.dispose();
+  }
 
   Color get _boxColor {
     switch (_level) {
@@ -278,7 +317,7 @@ void dispose() {
                   onPressed: () {
                     Navigator.pop(context);
                     _alertShowing = false;
-                    _eyeClosedStart = null;
+                    _consecutiveClosedFrames = 0; // 👈 รีเซ็ตจำนวนเฟรมเมื่อกดปิดแจ้งเตือน
                     _setLevel(DrowsinessLevel.normal);
                   },
                   child: Text('เข้าใจแล้ว',
@@ -293,10 +332,6 @@ void dispose() {
     );
   }
 
-  // ==========================================
-  // BUILD
-  // ==========================================
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -304,7 +339,6 @@ void dispose() {
       body: SafeArea(
         child: Column(
           children: [
-            // Camera Area
             Expanded(
               child: ClipRect(
                 child: Stack(
@@ -344,8 +378,6 @@ void dispose() {
                               size: 100, color: Colors.white24),
                         ),
                       ),
-
-                    // กรอบตรวจจับ
                     Center(
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 400),
@@ -356,8 +388,6 @@ void dispose() {
                         ),
                       ),
                     ),
-
-                    // REC Indicator
                     Positioned(
                       top: 16,
                       left: 16,
@@ -386,8 +416,6 @@ void dispose() {
                         ],
                       ),
                     ),
-
-                    // Model Status Indicator
                     Positioned(
                       top: 16,
                       right: 16,
@@ -408,91 +436,55 @@ void dispose() {
                         ),
                       ),
                     ),
-
-                    // Demo Helper Toggle
-                    Positioned(
-                      bottom: 16,
-                      right: 16,
-                      child: PopupMenuButton<DrowsinessLevel>(
-                        icon: const Icon(Icons.bug_report,
-                            color: Colors.white38),
-                        tooltip: 'Demo Trigger',
-                        onSelected: (level) => _setLevel(level),
-                        itemBuilder: (context) => [
-                          const PopupMenuItem(
-                            value: DrowsinessLevel.normal,
-                            child: Text('Test: ปกติ'),
-                          ),
-                          const PopupMenuItem(
-                            value: DrowsinessLevel.warning,
-                            child: Text('Test: เริ่มง่วง'),
-                          ),
-                          const PopupMenuItem(
-                            value: DrowsinessLevel.danger,
-                            child: Text('Test: ง่วงมาก (Alert)'),
-                          ),
-                        ],
-                      ),
-                    ),
                   ],
                 ),
               ),
             ),
 
             // Status Card
-            GestureDetector(
-              onTap: () {
-                if (_level == DrowsinessLevel.normal) {
-                  _setLevel(DrowsinessLevel.warning);
-                } else if (_level == DrowsinessLevel.warning) {
-                  _setLevel(DrowsinessLevel.danger);
-                } else {
-                  _setLevel(DrowsinessLevel.normal);
-                }
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 400),
-                margin:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1C1C1E),
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 10,
-                          height: 10,
-                          decoration: BoxDecoration(
-                              color: _boxColor, shape: BoxShape.circle),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 400),
+              margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1C1C1E),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: _boxColor,
+                          shape: BoxShape.circle,
                         ),
-                        const SizedBox(width: 8),
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 300),
-                          child: Text(_statusLabel,
-                              key: ValueKey(_level),
-                              style: GoogleFonts.kanit(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
-                                  color: _boxColor)),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 300),
-                      child: Text(_statusDescription,
-                          key: ValueKey(_statusDescription),
-                          style: GoogleFonts.kanit(
-                              fontSize: 15, color: Colors.white70)),
-                    ),
-                  ],
-                ),
+                      ),
+                      const SizedBox(width: 8),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 300),
+                        child: Text(_statusLabel,
+                            key: ValueKey(_level),
+                            style: GoogleFonts.kanit(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: _boxColor)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: Text(_statusDescription,
+                        key: ValueKey(_statusDescription),
+                        style: GoogleFonts.kanit(
+                            fontSize: 15, color: Colors.white70)),
+                  ),
+                ],
               ),
             ),
 
