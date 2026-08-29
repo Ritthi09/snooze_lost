@@ -13,6 +13,15 @@ import 'stats_manager.dart';
 @JS('detectVideo')
 external JSPromise _callDetectVideo(web.Element video);
 
+@JS('playWarningAlert')
+external void _playWarningAlert();
+
+@JS('playDangerAlert')
+external void _playDangerAlert();
+
+@JS('stopDangerAlert')
+external void _stopDangerAlert();
+
 enum DrowsinessLevel { normal, warning, danger }
 
 class DetectPage extends StatefulWidget {
@@ -32,11 +41,11 @@ class _DetectPageState extends State<DetectPage>
   bool _modelReady = false;
   Timer? _inferenceTimer;
 
-  DateTime? _eyeClosedStart;
-  bool _alertShowing = false;
+  // 🟢 ตัวแปรสำหรับจับเวลาจริง (Real-time tracking)
+  DateTime? _eyeClosedStartTime;
+  DateTime? _eyeOpenStartTime;
 
-  // 🟢 Buffer สำหรับทำ Temporal Smoothing (กันเฟรมหลุด/กระพริบตา)
-  final List<bool> _historyFrames = [];
+  bool _alertShowing = false;
 
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
@@ -98,88 +107,90 @@ class _DetectPageState extends State<DetectPage>
     }
   }
 
-  // 🟢 ประกาศตัวแปรนับเฟรมสะสมไว้ที่ระดับ Class (ใส่นอกฟังก์ชัน หรือด้านบนสุดของ State)
-  int _consecutiveClosedFrames = 0;
-
   void _processYoloResult(String rawJsonStr) {
-    try {
-      final List<dynamic> rawList = jsonDecode(rawJsonStr);
-      if (rawList.isEmpty) return;
+  try {
+    final List<dynamic> rawList = jsonDecode(rawJsonStr);
+    if (rawList.isEmpty) return;
 
-      double maxEyeOpenConf = 0.0;
-      double maxEyeClosedConf = 0.0;
-      const double confThreshold = 0.30;
+    double maxEyeOpenConf = 0.0;
+    double maxEyeClosedConf = 0.0;
+    const double confThreshold = 0.40;
 
-      // 1. Parse Data จาก Output
-      if (rawList.first is List) {
-        for (var box in rawList) {
-          final List<dynamic> row = box as List<dynamic>;
-          if (row.length >= 6) {
-            double score = (row[4] as num).toDouble();
-            int classId = (row[5] as num).toInt();
-
-            if (score > confThreshold) {
-              if (classId == 0 && score > maxEyeOpenConf) {
-                maxEyeOpenConf = score;
-              } else if (classId == 1 && score > maxEyeClosedConf) {
-                maxEyeClosedConf = score;
-              }
-            }
-          }
-        }
-      } else {
-        final List<double> output =
-            rawList.map((e) => (e as num).toDouble()).toList();
-        if (output.length < 1800) return;
-
-        for (int i = 0; i < 300; i++) {
-          int baseIdx = i * 6;
-          if (baseIdx + 5 < output.length) {
-            double score = output[baseIdx + 4];
-            int classId = output[baseIdx + 5].round();
-
-            if (score > confThreshold) {
-              if (classId == 0 && score > maxEyeOpenConf) {
-                maxEyeOpenConf = score;
-              } else if (classId == 1 && score > maxEyeClosedConf) {
-                maxEyeClosedConf = score;
-              }
-            }
+    if (rawList.first is List) {
+      for (var box in rawList) {
+        final List<dynamic> row = box as List<dynamic>;
+        if (row.length >= 6) {
+          double score = (row[4] as num).toDouble();
+          int classId = (row[5] as num).toInt();
+          if (score > confThreshold) {
+            if (classId == 0 && score > maxEyeOpenConf) maxEyeOpenConf = score;
+            if (classId == 1 && score > maxEyeClosedConf) maxEyeClosedConf = score;
           }
         }
       }
-
-      debugPrint(
-          "Open: ${maxEyeOpenConf.toStringAsFixed(2)} | Closed: ${maxEyeClosedConf.toStringAsFixed(2)}");
-
-      // 🟢 2. เช็กว่าเฟรมปัจจุบัน "หลับตา" หรือไม่
-      bool isClosedThisFrame = (maxEyeClosedConf > (maxEyeOpenConf + 0.10)) &&
-          (maxEyeClosedConf > confThreshold);
-
-      // 🟢 3. คำนวณตามจำนวนเฟรมที่หลับตาติดต่อกัน (Inference ทำงานทุก 150ms)
-      if (isClosedThisFrame) {
-        _consecutiveClosedFrames++;
-      } else {
-        // ถ้าลืมตาแม้แต่เฟรมเดียว หรือมั่นใจว่าตาเปิด ให้ตัดนับใหม่ทันที
-        _consecutiveClosedFrames = 0;
+    } else {
+      final List<double> output =
+          rawList.map((e) => (e as num).toDouble()).toList();
+      if (output.length < 1800) return;
+      for (int i = 0; i < 300; i++) {
+        int baseIdx = i * 6;
+        if (baseIdx + 5 < output.length) {
+          double score = output[baseIdx + 4];
+          int classId = output[baseIdx + 5].round();
+          if (score > confThreshold) {
+            if (classId == 0 && score > maxEyeOpenConf) maxEyeOpenConf = score;
+            if (classId == 1 && score > maxEyeClosedConf) maxEyeClosedConf = score;
+          }
+        }
       }
-
-      // 🟢 4. กำหนดสถานะตามจำนวนเฟรมหลับตา (150ms ต่อ 1 เฟรม)
-      // - หลับตาต่อเนื่อง 15 เฟรม (~2.25 วินาทีขึ้นไป) -> ง่วงมาก (Danger)
-      // - หลับตาต่อเนื่อง 5 เฟรม (~0.75 วินาทีขึ้นไป)  -> เริ่มง่วง (Warning)
-      // - น้อยกว่า 5 เฟรม                           -> ปกติ (Normal)
-      if (_consecutiveClosedFrames >= 8) {
-        _setLevel(DrowsinessLevel.danger);
-      } else if (_consecutiveClosedFrames >= 2) {
-        _setLevel(DrowsinessLevel.warning);
-      } else {
-        _setLevel(DrowsinessLevel.normal);
-      }
-
-    } catch (e) {
-      debugPrint("Error parsing YOLO result: $e");
     }
+
+    debugPrint('Open: ${maxEyeOpenConf.toStringAsFixed(2)} | Closed: ${maxEyeClosedConf.toStringAsFixed(2)}');
+
+    bool isClosedThisFrame = (maxEyeClosedConf > (maxEyeOpenConf + 0.30)) &&
+    (maxEyeClosedConf > 0.70);
+
+    final now = DateTime.now();
+
+    if (isClosedThisFrame) {
+      // ตาปิด → reset เวลาลืมตา, เริ่มนับเวลาหลับตา
+      _eyeOpenStartTime = null;
+      _eyeClosedStartTime ??= now;
+
+      final closedMs = now.difference(_eyeClosedStartTime!).inMilliseconds;
+
+      if (closedMs >= 4500) {
+        _setLevel(DrowsinessLevel.danger);
+      } else if (closedMs >= 1500) {
+        // ขึ้น warning ได้ แต่ห้ามลด danger ลงมา warning
+        if (_level == DrowsinessLevel.normal) {
+          _setLevel(DrowsinessLevel.warning);
+        }
+      }
+    } else {
+      // ตาเปิด → เริ่มนับเวลาลืมตา
+      _eyeClosedStartTime = null;
+      _eyeOpenStartTime ??= now;
+
+      final openMs = now.difference(_eyeOpenStartTime!).inMilliseconds;
+
+      if (_level == DrowsinessLevel.danger) {
+        // danger → ต้องลืมตานาน 2 วินาที ถึงจะลดลง warning
+        if (openMs >= 2000) {
+          _setLevel(DrowsinessLevel.warning);
+        }
+      } else if (_level == DrowsinessLevel.warning) {
+        // warning → ต้องลืมตานาน 1 วินาที ถึงจะกลับปกติ
+        if (openMs >= 1000) {
+          _setLevel(DrowsinessLevel.normal);
+        }
+      }
+      // normal → ไม่ต้องทำอะไร
+    }
+  } catch (e) {
+    debugPrint('Error parsing YOLO result: $e');
   }
+}
 
   Future<void> _initCamera() async {
     try {
@@ -213,19 +224,26 @@ class _DetectPageState extends State<DetectPage>
   }
 
   void _setLevel(DrowsinessLevel level) {
-    if (!mounted || _level == level) return;
-    setState(() => _level = level);
+  if (!mounted || _level == level) return;
+  
+  final previous = _level;
+  setState(() => _level = level);
 
-    if (level == DrowsinessLevel.warning) {
-      StatsManager().addLog('warning');
-    } else if (level == DrowsinessLevel.danger) {
-      StatsManager().addLog('danger');
-      if (!_alertShowing) {
-        _alertShowing = true;
-        _showDangerAlert();
-      }
+  if (level == DrowsinessLevel.normal) {
+    _stopDangerAlert(); // หยุดเสียงทั้งหมด
+  } else if (level == DrowsinessLevel.warning) {
+    _stopDangerAlert();
+    _playWarningAlert(); // เสียงเบา
+    StatsManager().addLog('warning');
+  } else if (level == DrowsinessLevel.danger) {
+    _playDangerAlert(); // เสียงดัง วนซ้ำ
+    StatsManager().addLog('danger');
+    if (!_alertShowing) {
+      _alertShowing = true;
+      _showDangerAlert();
     }
   }
+}
 
   @override
   void dispose() {
@@ -270,6 +288,8 @@ class _DetectPageState extends State<DetectPage>
   }
 
   void _showDangerAlert() {
+    if (!mounted) return; // 🟢 Safety Check ป้องกัน Unmounted error
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -315,10 +335,11 @@ class _DetectPageState extends State<DetectPage>
                         borderRadius: BorderRadius.circular(50)),
                   ),
                   onPressed: () {
-                    Navigator.pop(context);
+                    _stopDangerAlert(); // ← เพิ่มบรรทัดนี้
+                    if (Navigator.canPop(context)) Navigator.pop(context);
                     _alertShowing = false;
-                    _consecutiveClosedFrames = 0; // 👈 รีเซ็ตจำนวนเฟรมเมื่อกดปิดแจ้งเตือน
-                    _setLevel(DrowsinessLevel.normal);
+                    _eyeClosedStartTime = null;
+                    if (mounted) _setLevel(DrowsinessLevel.normal);
                   },
                   child: Text('เข้าใจแล้ว',
                       style: GoogleFonts.kanit(
@@ -538,12 +559,21 @@ class _DetectPageState extends State<DetectPage>
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {
+        if (!mounted) return; // 🟢 ป้องกัน context unmounted crash
         if (index == 0) Navigator.pop(context);
         if (index == 2) {
+          _inferenceTimer?.cancel(); // ← หยุด inference ก่อน
+          _stopDangerAlert();
           Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const StatisticsPage()),
-          );
+          ).then((_) {
+            // พอกลับมาจากสถิติ เริ่ม inference ใหม่
+            _inferenceTimer = Timer.periodic(
+              const Duration(milliseconds: 150),
+              (_) => _runInferenceOnWeb(),
+            );
+          });
         }
       },
       child: Column(
@@ -577,7 +607,10 @@ class _DetectPageState extends State<DetectPage>
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => setState(() => _currentIndex = 1),
+      onTap: () {
+        if (!mounted) return;
+        setState(() => _currentIndex = 1);
+      },
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,

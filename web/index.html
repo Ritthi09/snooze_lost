@@ -26,7 +26,8 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-cpu"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite/dist/tf-tflite.min.js"></script>
-
+  
+  <script src="audio_alert.js"></script>
   <!-- สคริปต์โหลดและประมวลผลโมเดล TFLite -->
   <script>
     let tfliteModel = null;
@@ -38,7 +39,7 @@
     async function loadTfliteModel() {
       try {
         // Path อ้างอิงสำหรับ assets ใน Flutter Web
-        tfliteModel = await tflite.loadTFLiteModel('assets/best_float16.tflite');
+        tfliteModel = await tflite.loadTFLiteModel('model/best_float16.tflite');
         console.log("✅ TFLite Model Loaded Successfully!");
       } catch (error) {
         console.error("❌ Failed to load TFLite Model:", error);
@@ -89,5 +90,6 @@
     // เริ่มโหลดโมเดลทันทีเมื่อเปิดเว็บ
     loadTfliteModel();
   </script>
+  <!-- เสียงแจ้งเตือน -->
 </body>
 </html>
