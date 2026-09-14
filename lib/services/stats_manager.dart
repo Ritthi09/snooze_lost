@@ -1,6 +1,7 @@
+import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'detect_page.dart';
-import 'statistics_page.dart';
+import 'log_service.dart';
+
 
 class DrowsinessLog {
   final DateTime timestamp;
@@ -163,17 +164,25 @@ class StatsManager {
         daily[i] = logs.where((l) => _isSameDay(l.timestamp, day)).length.toDouble();
       }
       return daily;
-    } else if (periodIndex == 2) { // 30 วัน (แบ่ง 4 สัปดาห์)
-      List<double> weekly = List.filled(4, 0);
-      final todayStart = DateTime(now.year, now.month, now.day);
-      for (var l in logs) {
-        if (l.timestamp.isAfter(todayStart.subtract(const Duration(days: 29)))) {
-          int diffDays = todayStart.difference(l.timestamp).inDays;
-          int weekIndex = 3 - (diffDays ~/ 7);
-          if (weekIndex >= 0 && weekIndex < 4) weekly[weekIndex]++;
+    } else if (periodIndex == 2) { // 30 วัน / เดือนนี้ (แบ่งตามสัปดาห์ปฏิทิน)
+        List<double> weekly = List.filled(4, 0);
+        final now = DateTime.now();
+        
+        // กรองเฉพาะ log ที่เกิดใน "เดือนนี้" และ "ปีนี้" เท่านั้น
+        final currentMonthLogs = logs.where((l) => 
+          l.timestamp.year == now.year && l.timestamp.month == now.month
+        );
+
+        for (var l in currentMonthLogs) {
+          // หาว่าวันที่ของ Log อยู่ในสัปดาห์ที่เท่าไหร่ของเดือน (1-7 = สัปดาห์ 1, 8-14 = สัปดาห์ 2, ...)
+          int weekIndex = (l.timestamp.day - 1) ~/ 7;
+          
+          // หากเกิน 4 สัปดาห์ (เช่น วันที่ 29-31) ให้ปัดมารวมในสัปดาห์ที่ 4 (index 3)
+          if (weekIndex > 3) weekIndex = 3;
+          
+          weekly[weekIndex]++;
         }
-      }
-      return weekly;
+        return weekly;
     } else { // ภาพรวม 6 เดือน
       List<double> monthly = List.filled(6, 0);
       for (var l in logs) {

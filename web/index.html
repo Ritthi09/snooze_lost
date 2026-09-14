@@ -18,6 +18,14 @@
 
   <title>snooze_lost</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- 🟢 ปรับ CSS ตกแต่งวิดีโอให้ภาพสว่าง คมชัด และลด Noise ทางสายตา -->
+  <style>
+    video {
+      filter: contrast(108%) brightness(110%) saturate(105%);
+      object-fit: cover;
+    }
+  </style>
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>
@@ -28,6 +36,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite/dist/tf-tflite.min.js"></script>
   
   <script src="audio_alert.js"></script>
+  
   <!-- สคริปต์โหลดและประมวลผลโมเดล TFLite -->
   <script>
     let tfliteModel = null;
@@ -38,11 +47,43 @@
     // 1. โหลดโมเดลจาก assets
     async function loadTfliteModel() {
       try {
-        // Path อ้างอิงสำหรับ assets ใน Flutter Web
         tfliteModel = await tflite.loadTFLiteModel('model/best_float16.tflite');
         console.log("✅ TFLite Model Loaded Successfully!");
       } catch (error) {
         console.error("❌ Failed to load TFLite Model:", error);
+      }
+    }
+
+    // 🟢 2. ฟังก์ชันปรับแต่งกล้อง (แก้ Noise + ย้อนแสง + เร่งความชัด HD)
+    async function enhanceCameraStream(videoElement) {
+      if (!videoElement || !videoElement.srcObject) return;
+      
+      const stream = videoElement.srcObject;
+      const tracks = stream.getVideoTracks();
+      
+      if (tracks.length > 0) {
+        const track = tracks[0];
+        
+        // ถ้าเคยปรับแต่งแทร็กนี้แล้ว ไม่ต้องปรับซ้ำ
+        if (track.dataset && track.dataset.enhanced) return;
+
+        try {
+          // บังคับการตั้งค่าความละเอียดและ Auto Exposure
+          await track.applyConstraints({
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            advanced: [
+              { exposureMode: 'continuous' },
+              { whiteBalanceMode: 'continuous' },
+              { focusMode: 'continuous' }
+            ]
+          });
+          track.dataset = track.dataset || {};
+          track.dataset.enhanced = "true";
+          console.log("📸 Camera stream enhanced: HD + Auto Exposure enabled.");
+        } catch (e) {
+          console.warn("⚠️ Camera constraints not fully supported on this browser:", e);
+        }
       }
     }
 
@@ -58,6 +99,9 @@
 
       if (!videoElement) return null;
 
+      // 🟢 สั่งปรับคุณภาพกล้องอัตโนมัติเมื่อพบ Element ของวิดีโอ
+      enhanceCameraStream(videoElement);
+
       try {
         return tf.tidy(() => {
           // 1. แปลงภาพจากกล้องเป็น Tensor
@@ -69,15 +113,12 @@
           // 3. ปรับสเกลภาพเป็น 0.0 - 1.0
           const normalized = tf.div(resized, 255.0);
 
-          // 4. ขยาย Dimension (Batch size = 1) โดยใช้ tf.expandDims ครอบ
+          // 4. ขยาย Dimension (Batch size = 1)
           const batched = tf.expandDims(normalized, 0);
 
           // 5. รัน Predict ผ่าน TFLite Model
           const predictions = tfliteModel.predict(batched);
           const data = predictions.dataSync();
-
-          // 🟢 เพิ่มบรรทัดนี้เพื่อดูจำนวนตัวเลขทั้งหมดที่โมเดลพ่นออกมา
-          console.log("Output Length:", data.length); 
 
           return JSON.stringify(Array.from(data));
         });
@@ -90,6 +131,5 @@
     // เริ่มโหลดโมเดลทันทีเมื่อเปิดเว็บ
     loadTfliteModel();
   </script>
-  <!-- เสียงแจ้งเตือน -->
 </body>
 </html>

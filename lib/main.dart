@@ -222,10 +222,6 @@ class _PdpaDialogState extends State<_PdpaDialog> {
     await prefs.setBool('pdpa_accepted', true);
     if (mounted) {
       Navigator.pop(context);
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const DetectPage()),
-      );
     }
   }
 

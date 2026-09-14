@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:iconify_flutter/iconify_flutter.dart';
 import 'package:iconify_flutter/icons/mdi.dart';
-import 'stats_manager.dart';
+import '../services/stats_manager.dart';
+import '../services/log_service.dart';
 
 const String pulse = '<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 28 28"><path d="M0 0h28v28H0z" fill="none" /><path fill="currentColor" d="M10.035 3a1 1 0 0 1 .94.78l3.712 16.496l3.864-11.592a1 1 0 0 1 1.878-.055L22.177 13H25a1 1 0 1 1 0 2h-3.5a1 1 0 0 1-.928-.629l-.987-2.465l-4.136 12.41a1 1 0 0 1-1.925-.096L9.862 7.94l-1.904 6.347A1 1 0 0 1 7 15H3a1 1 0 1 1 0-2h3.256l2.786-9.287A1 1 0 0 1 10.035 3" /></svg>';
 const String bell = '<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24"><path d="M0 0h24v24H0z" fill="none" /><path fill="currentColor" d="M17.133 12.632v-1.8a5.406 5.406 0 0 0-4.154-5.262A1 1 0 0 0 13 5.464V3.1a1 1 0 0 0-2 0v2.364a1 1 0 0 0 .021.106a5.406 5.406 0 0 0-4.154 5.262v1.8C6.867 15.018 5 15.614 5 16.807C5 17.4 5 18 5.538 18h12.924C19 18 19 17.4 19 16.807c0-1.193-1.867-1.789-1.867-4.175M6 6a1 1 0 0 1-.707-.293l-1-1a1 1 0 0 1 1.414-1.414l1 1A1 1 0 0 1 6 6m-2 4H3a1 1 0 0 1 0-2h1a1 1 0 1 1 0 2m14-4a1 1 0 0 1-.707-1.707l1-1a1 1 0 1 1 1.414 1.414l-1 1A1 1 0 0 1 18 6m3 4h-1a1 1 0 1 1 0-2h1a1 1 0 1 1 0 2M8.823 19a3.453 3.453 0 0 0 6.354 0z" /></svg>';
@@ -27,7 +28,6 @@ class _StatisticsPageState extends State<StatisticsPage> {
     0: ['00', '03', '06', '09', '12', '15', '18', '21'],
     1: ['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.'],
     2: ['สัปดาห์ 1', 'สัปดาห์ 2', 'สัปดาห์ 3', 'สัปดาห์ 4'],
-    3: ['ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.', 'ม.ค.', 'ก.พ.'],
   };
 
   final Map<int, String> _chartTitle = {
@@ -36,6 +36,28 @@ class _StatisticsPageState extends State<StatisticsPage> {
     2: 'แนวโน้มการตรวจพบอาการง่วง (รายสัปดาห์)',
     3: 'แนวโน้มการตรวจพบอาการง่วง (ภาพรวม)',
   };
+
+  List<String> _getLast7DaysLabels() {
+  const dayNames = ['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.'];
+  final now = DateTime.now();
+  return List.generate(7, (i) {
+    DateTime date = now.subtract(Duration(days: 6 - i));
+    return dayNames[date.weekday - 1];
+  });
+}
+  // 🟢 เพิ่มฟังก์ชันนี้ลงไปตรงนี้ครับ
+  List<String> _getLast6MonthsLabels() {
+    const monthNames = [
+      'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+      'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'
+    ];
+    final now = DateTime.now();
+    return List.generate(6, (i) {
+      int monthIndex = (now.month - 1 - (5 - i)) % 12;
+      if (monthIndex < 0) monthIndex += 12;
+      return monthNames[monthIndex];
+    });
+  }
 
   // แปลง Duration ให้เป็นข้อความแบบ "X ชม. Y นาที"
   String _formatDuration(Duration duration) {
@@ -163,6 +185,38 @@ class _StatisticsPageState extends State<StatisticsPage> {
                     const SizedBox(height: 16),
                     _buildAdviceCard(),
                     const SizedBox(height: 8),
+                    // เพิ่มใน SingleChildScrollView ต่อจาก _buildAdviceCard()
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2C2C2E),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        onPressed: () {
+                          debugPrint('Logs count: ${LogService().logs.length}');
+                          if (LogService().logs.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('ยังไม่มีข้อมูล log ครับ',
+                                    style: GoogleFonts.kanit()),
+                                backgroundColor: const Color(0xFF2C2C2E),
+                              ),
+                            );
+                            return;
+                          }
+                          LogService().exportCsv();
+                        },
+                        icon: const Icon(Icons.download, color: Color(0xFF09F169)),
+                        label: Text('Export Log (.csv)',
+                            style: GoogleFonts.kanit(fontSize: 15)),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -381,8 +435,13 @@ class _StatisticsPageState extends State<StatisticsPage> {
   }
 
   Widget _buildChart(List<double> data) {
-    final labels = _chartLabels[_selectedPeriod] ?? [];
-    double maxVal = data.isEmpty ? 8 : data.reduce((a, b) => a > b ? a : b);
+    final labels = _selectedPeriod == 1
+      ? _getLast7DaysLabels()
+      : (_selectedPeriod == 3 
+          ? _getLast6MonthsLabels() 
+          : (_chartLabels[_selectedPeriod] ?? []));
+
+  double maxVal = data.isEmpty ? 8 : data.reduce((a, b) => a > b ? a : b);
     final double yMax = maxVal < 8 ? 8 : maxVal; // สเกลขั้นต่ำ 8
     const chartHeight = 140.0;
     const labelHeight = 20.0;
