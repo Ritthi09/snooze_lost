@@ -60,12 +60,12 @@ class _SplashScreenState extends State<SplashScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 // โลโก้ — เปลี่ยนเป็น Image.asset ได้ถ้ามีไฟล์
-                const Icon(
-                  Icons.nightlight_round,
-                  size: 100,
-                  color: Colors.black,
-                ),
-                const SizedBox(height: 16),
+                Image.asset(
+                'images/splashscreen.png',
+                width: 120,                   
+                height: 120,                  
+              ),
+              const SizedBox(height: 16),
                 Text(
                   'Snooze',
                   style: GoogleFonts.kanit(
@@ -79,7 +79,7 @@ class _SplashScreenState extends State<SplashScreen>
                   style: GoogleFonts.kanit(
                     fontSize: 36,
                     fontWeight: FontWeight.bold,
-                    color: Colors.black,
+                    color: Colors.white,
                   ),
                 ),
               ],

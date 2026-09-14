@@ -1,6 +1,6 @@
 {
-    "name": "snooze_lost",
-    "short_name": "snooze_lost",
+    "name": "Snooze Lost",
+    "short_name": "Snooze Lost",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

@@ -72,10 +72,10 @@ class _HomePageState extends State<HomePage> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(
-                      Icons.nightlight_round,
-                      color: Colors.greenAccent,
-                      size: 100,
+                    Image.asset(
+                      'images/iconmain.png',
+                      width: 120,                   
+                      height: 120,                  
                     ),
                     const SizedBox(height: 16),
                     Text(
