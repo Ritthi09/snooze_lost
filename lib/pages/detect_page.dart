@@ -53,6 +53,11 @@ class _DetectPageState extends State<DetectPage>
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
 
+  // ⚡ ตัวแปรสำหรับโหมดประหยัดพลังงาน (Power Saving Mode)
+  Timer? _powerSaveTimer;
+  bool _isPowerSaving = false;
+  static const Duration _powerSaveTimeout = Duration(seconds: 60);
+
   @override
   void initState() {
     super.initState();
@@ -65,6 +70,57 @@ class _DetectPageState extends State<DetectPage>
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
     _initModel().then((_) => _initCamera());
+
+    // เริ่มจับเวลา 5 นาทีสำหรับโหมดประหยัดพลังงาน
+    _resetPowerSaveTimer();
+  }
+
+  /// รีเซ็ตตัวจับเวลา 5 นาทีเพื่อเข้าสู่โหมดประหยัดพลังงาน
+  void _resetPowerSaveTimer() {
+    _powerSaveTimer?.cancel();
+    _powerSaveTimer = Timer(_powerSaveTimeout, _enterPowerSavingMode);
+  }
+
+  /// เข้าสู่โหมดประหยัดพลังงาน
+  void _enterPowerSavingMode() {
+    if (!mounted || _isPowerSaving) return;
+
+    setState(() {
+      _isPowerSaving = true;
+    });
+
+    // หยุด Animation ชั่วคราวเพื่อประหยัด GPU/CPU
+    _pulseController.stop();
+
+    // ปรับรอบการทำงานของ AI ให้ช้าลง (จาก 150ms เป็น 1000ms)
+    _startInferenceTimer(intervalMs: 150);
+  }
+
+  /// ออกจากโหมดประหยัดพลังงาน
+  void _disablePowerSavingMode() {
+    if (!mounted) return;
+
+    setState(() {
+      _isPowerSaving = false;
+    });
+
+    // เล่น Animation ต่อ
+    _pulseController.repeat(reverse: true);
+
+    // ปรับรอบการทำงานของ AI กลับมาเป็นความเร็วปกติ (150ms)
+    _startInferenceTimer(intervalMs: 150);
+
+    // เริ่มนับเวลา 5 นาทีใหม่อีกครั้ง
+    _resetPowerSaveTimer();
+  }
+
+  /// เริ่มต้น / เปลี่ยนรอบเวลาของ Inference Timer
+  void _startInferenceTimer({int intervalMs = 150}) {
+    _inferenceTimer?.cancel();
+    _inferenceTimer = Timer.periodic(
+      Duration(milliseconds: intervalMs),
+      (_) => _runInferenceOnWeb(),
+    );
   }
 
   Future<void> _initModel() async {
@@ -164,7 +220,7 @@ class _DetectPageState extends State<DetectPage>
 
         if (closedMs >= 4500) {
           _setLevel(DrowsinessLevel.danger);
-        } else if (closedMs >= 3000) {
+        } else if (closedMs >= 1300) {
           if (_level == DrowsinessLevel.normal) {
             _setLevel(DrowsinessLevel.warning);
           }
@@ -211,10 +267,7 @@ class _DetectPageState extends State<DetectPage>
         setState(() {});
         StatsManager().startSession();
 
-        _inferenceTimer = Timer.periodic(
-          const Duration(milliseconds: 150),
-          (_) => _runInferenceOnWeb(),
-        );
+        _startInferenceTimer(intervalMs: 150);
       }
     } catch (e) {
       debugPrint('Camera error: $e');
@@ -253,6 +306,7 @@ class _DetectPageState extends State<DetectPage>
 
   @override
   void dispose() {
+    _powerSaveTimer?.cancel();
     StatsManager().stopSession();
     _inferenceTimer?.cancel();
     _cameraController?.dispose();
@@ -481,6 +535,66 @@ class _DetectPageState extends State<DetectPage>
                         ),
                       ),
                     ),
+
+                    // ⚡ 5. Power Saving Mode Overlay (แสดงเมื่อเปิดค้างไว้เกิน 5 นาที)
+                    if (_isPowerSaving)
+                      Positioned.fill(
+                        child: Container(
+                          color: Colors.black.withOpacity(0.95),
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.battery_saver_rounded,
+                                  color: Color(0xFF09F169),
+                                  size: 56,
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'โหมดประหยัดพลังงาน',
+                                  style: GoogleFonts.kanit(
+                                    color: Colors.white,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'ตรวจจับความถี่ลดลงเพื่อประหยัดแบตเตอรี่',
+                                  style: GoogleFonts.kanit(
+                                    color: Colors.white70,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+                                ElevatedButton.icon(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF09F169),
+                                    foregroundColor: Colors.black,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 24,
+                                      vertical: 12,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(30),
+                                    ),
+                                  ),
+                                  onPressed: _disablePowerSavingMode,
+                                  icon: const Icon(Icons.power_settings_new),
+                                  label: Text(
+                                    'ปิดโหมดประหยัดพลังงาน',
+                                    style: GoogleFonts.kanit(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -511,23 +625,48 @@ class _DetectPageState extends State<DetectPage>
                       ),
                       const SizedBox(width: 8),
                       AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 300),
-                        child: Text(_statusLabel,
-                            key: ValueKey(_level),
-                            style: GoogleFonts.kanit(
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                                color: _boxColor)),
+                        duration: const Duration(milliseconds: 150), // 🟢 ลดเวลาลงเหลือ 150ms เพื่อให้สลับข้อความไวขึ้น ไม่ค้างซ้อน
+                        layoutBuilder: (Widget? currentChild, List<Widget> previousChildren) {
+                          return Stack(
+                            alignment: Alignment.center, // 🟢 ซ้อนทับตรงจุดศูนย์กลางเป๊ะๆ ไม่เยื้อง
+                            children: <Widget>[
+                              ...previousChildren,
+                              if (currentChild != null) currentChild,
+                            ],
+                          );
+                        },
+                        child: Text(
+                          _statusLabel,
+                          key: ValueKey('label_${_level.name}'), // 🟢 ใส่ Key แบบเฉพาะเจาะจง
+                          style: GoogleFonts.kanit(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: _boxColor,
+                          ),
+                        ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 4),
                   AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 300),
-                    child: Text(_statusDescription,
-                        key: ValueKey(_statusDescription),
-                        style: GoogleFonts.kanit(
-                            fontSize: 15, color: Colors.white70)),
+                    duration: const Duration(milliseconds: 150), // 🟢 ลดเวลาลงเหลือ 150ms
+                    layoutBuilder: (Widget? currentChild, List<Widget> previousChildren) {
+                      return Stack(
+                        alignment: Alignment.center,
+                        children: <Widget>[
+                          ...previousChildren,
+                          if (currentChild != null) currentChild,
+                        ],
+                      );
+                    },
+                    child: Text(
+                      _statusDescription,
+                      key: ValueKey('desc_${_level.name}'), // 🟢 ใส่ Key แบบเฉพาะเจาะจง
+                      style: GoogleFonts.kanit(
+                        fontSize: 15, 
+                        color: Colors.white70,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -592,10 +731,7 @@ class _DetectPageState extends State<DetectPage>
             context,
             MaterialPageRoute(builder: (_) => const StatisticsPage()),
           ).then((_) {
-            _inferenceTimer = Timer.periodic(
-              const Duration(milliseconds: 150),
-              (_) => _runInferenceOnWeb(),
-            );
+            _startInferenceTimer(intervalMs: _isPowerSaving ? 1000 : 150);
           });
         }
       },
@@ -674,9 +810,9 @@ class _DetectPageState extends State<DetectPage>
         ],
       ),
     );
-    
   }
 }
+
 class EdgeGlowPainter extends CustomPainter {
   final Color color;
   final double strokeWidth;

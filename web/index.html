@@ -46,13 +46,18 @@
 
     // 1. โหลดโมเดลจาก assets
     async function loadTfliteModel() {
-      try {
-        tfliteModel = await tflite.loadTFLiteModel('model/best_float16.tflite');
-        console.log("✅ TFLite Model Loaded Successfully!");
-      } catch (error) {
-        console.error("❌ Failed to load TFLite Model:", error);
-      }
+  try {
+    tfliteModel = await tflite.loadTFLiteModel('model/best_float16.tflite');
+    console.log("✅ TFLite Model Loaded Successfully!");
+    
+    // พิมพ์ตรวจสอบ Output Shape ของ โมเดลใน Browser Console
+    if (tfliteModel.outputShape) {
+      console.log("📐 Model Output Shape:", tfliteModel.outputShape);
     }
+  } catch (error) {
+    console.error("❌ Failed to load TFLite Model:", error);
+  }
+}
 
     // 🟢 2. ฟังก์ชันปรับแต่งกล้อง (แก้ Noise + ย้อนแสง + เร่งความชัด HD)
     async function enhanceCameraStream(videoElement) {
@@ -127,7 +132,7 @@
         return null;
       }
     }
-
+    
     // เริ่มโหลดโมเดลทันทีเมื่อเปิดเว็บ
     loadTfliteModel();
   </script>
